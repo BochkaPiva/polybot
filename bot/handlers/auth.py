@@ -1,0 +1,131 @@
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+from db.repositories.users import UserRepository
+from db.models import User
+from bot.keyboards.common import get_auth_keyboard, get_main_keyboard
+
+# Define authentication states
+class AuthStates(StatesGroup):
+    waiting_for_full_name = State()
+    waiting_for_auth_code = State()
+
+# Create router
+router = Router()
+
+@router.message(Command("start"), StateFilter(None))
+async def cmd_start(message: Message, session, is_authenticated: bool, user=None):
+    """Handle /start command"""
+    if is_authenticated:
+        await message.answer(
+            f"Добро пожаловать, {user.full_name}! Вы уже авторизованы.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    await message.answer(
+        "Добро пожаловать в бот-справочник предприятия 'Полиом'!\n"
+        "Для начала работы, пожалуйста, авторизуйтесь.",
+        reply_markup=get_auth_keyboard()
+    )
+
+@router.callback_query(F.data == "auth")
+async def auth_callback(callback: CallbackQuery, state: FSMContext):
+    """Handle authentication button click"""
+    await callback.answer()
+    
+    await callback.message.answer(
+        "Пожалуйста, введите ваше ФИО полностью, как оно указано в базе данных.\n"
+        "Например: Иванов Иван Иванович"
+    )
+    
+    # Set state to waiting for full name
+    await state.set_state(AuthStates.waiting_for_full_name)
+
+@router.message(AuthStates.waiting_for_full_name)
+async def process_full_name(message: Message, state: FSMContext, session):
+    """Process full name input"""
+    full_name = message.text.strip()
+    
+    # Check if full name exists in database
+    user_repo = UserRepository(session)
+    user = await user_repo.get_user_by_full_name(full_name)
+    
+    if not user:
+        await message.answer(
+            "К сожалению, такого пользователя нет в базе данных.\n"
+            "Пожалуйста, проверьте правильность написания ФИО и попробуйте снова."
+        )
+        return
+    
+    # Store user ID in state
+    await state.update_data(user_id=user.id)
+    
+    # Check if this is a new Telegram user for this full name
+    if user.telegram_id != message.from_user.id:
+        # Update Telegram ID for this user
+        user.telegram_id = message.from_user.id
+        await session.commit()
+    
+    # Ask for authentication code
+    await message.answer(
+        f"Спасибо, {full_name}!\n"
+        "Для подтверждения личности, пожалуйста, введите ваш персональный код.\n"
+        "Если у вас его нет, обратитесь к администратору."
+    )
+    
+    # Set state to waiting for auth code
+    await state.set_state(AuthStates.waiting_for_auth_code)
+
+@router.message(AuthStates.waiting_for_auth_code)
+async def process_auth_code(message: Message, state: FSMContext, session):
+    """Process authentication code input"""
+    auth_code = message.text.strip()
+    
+    # Get user ID from state
+    data = await state.get_data()
+    user_id = data.get("user_id")
+    
+    if not user_id:
+        await message.answer("Произошла ошибка. Пожалуйста, начните авторизацию заново.")
+        await state.clear()
+        return
+    
+    # Get user from database
+    user_repo = UserRepository(session)
+    user = await session.get(User, user_id)
+    
+    if not user:
+        await message.answer("Произошла ошибка. Пожалуйста, начните авторизацию заново.")
+        await state.clear()
+        return
+    
+    # Check authentication code
+    if user.auth_code == auth_code:
+        # Authenticate user
+        await user_repo.authenticate_user(user.id)
+        
+        await message.answer(
+            f"Авторизация успешна! Добро пожаловать, {user.full_name}.",
+            reply_markup=get_main_keyboard()
+        )
+    else:
+        # Record failed attempt
+        failed_attempts = await user_repo.record_failed_attempt(user.id)
+        
+        if failed_attempts >= 3:
+            await message.answer(
+                "Слишком много неудачных попыток. Пожалуйста, обратитесь к администратору."
+            )
+            await state.clear()
+        else:
+            await message.answer(
+                "Неверный код. Пожалуйста, попробуйте снова или обратитесь к администратору."
+            )
+            return
+    
+    # Clear state
+    await state.clear()
