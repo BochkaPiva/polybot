@@ -30,7 +30,9 @@
                                 <input type="checkbox" class="form-check-input" id="selectAll">
                             </th>
                             <th>ID</th>
-                            <th>Название</th>
+                            <th>Название файла</th>
+                            <th>Тип файла</th>
+                            <th>Размер</th>
                             <th>Дата создания</th>
                             <th>Действия</th>
                         </tr>
@@ -42,13 +44,15 @@
                                 <input type="checkbox" class="form-check-input doc-select" data-doc-id="{{ doc.id }}">
                             </td>
                             <td>{{ doc.id }}</td>
-                            <td>{{ doc.title }}</td>
+                            <td>{{ doc.original_filename }}</td>
+                            <td>{{ doc.file_type }}</td>
+                            <td>{{ doc.file_size|filesizeformat }}</td>
                             <td>{{ doc.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
                             <td>
                                 <div class="btn-group">
-                                    <button type="button" class="btn btn-info" onclick="viewDocument({{ doc.id }})">
-                                        <i class="fas fa-eye me-1"></i> Просмотр
-                                    </button>
+                                    <a href="/uploads/{{ doc.system_filename }}" class="btn btn-info" target="_blank">
+                                        <i class="fas fa-download me-1"></i> Скачать
+                                    </a>
                                     <button type="button" class="btn btn-danger" onclick="deleteDocument({{ doc.id }})">
                                         <i class="fas fa-trash me-1"></i> Удалить
                                     </button>
@@ -72,36 +76,16 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form id="addDocumentForm">
+                <form id="addDocumentForm" enctype="multipart/form-data">
                     <div class="mb-3">
-                        <label for="addTitle" class="form-label">Название</label>
-                        <input type="text" class="form-control" id="addTitle" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="addContent" class="form-label">Содержание</label>
-                        <textarea class="form-control" id="addContent" rows="5"></textarea>
+                        <label for="documentFile" class="form-label">Выберите файл</label>
+                        <input type="file" class="form-control" id="documentFile" required>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                <button type="button" class="btn btn-primary" onclick="submitAddDocument()">Добавить</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- View Document Modal -->
-<div class="modal fade" id="viewDocumentModal" tabindex="-1" aria-labelledby="viewDocumentModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="viewDocumentModalLabel">Просмотр документа</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <h4 id="viewTitle"></h4>
-                <div class="mt-3" id="viewContent"></div>
+                <button type="button" class="btn btn-primary" onclick="submitAddDocument()">Загрузить</button>
             </div>
         </div>
     </div>
@@ -111,159 +95,62 @@
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const table = document.getElementById('documentsTable');
-    if (table) {
-        new simpleDatatables.DataTable(table, {
-            searchable: true,
-            sortable: true,
-            perPage: 10,
-            labels: {
-                placeholder: "Поиск...",
-                perPage: "{select} записей на странице",
-                noRows: "Записи не найдены",
-                info: "Показано с {start} по {end} из {rows} записей",
-                noResults: "Нет результатов по вашему запросу"
-            }
-        });
-    }
-
-    // Обработка выбора всех чекбоксов
-    const selectAllCheckbox = document.getElementById('selectAll');
-    const docCheckboxes = document.getElementsByClassName('doc-select');
-    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-
-    selectAllCheckbox.addEventListener('change', function() {
-        Array.from(docCheckboxes).forEach(checkbox => {
-            checkbox.checked = selectAllCheckbox.checked;
-        });
-        updateDeleteButtonVisibility();
-    });
-
-    // Обработка выбора отдельных чекбоксов
-    Array.from(docCheckboxes).forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            updateDeleteButtonVisibility();
-            // Обновляем состояние главного чекбокса
-            selectAllCheckbox.checked = Array.from(docCheckboxes).every(cb => cb.checked);
-        });
-    });
-
-    // Обработчик кнопки удаления выбранных
-    deleteSelectedBtn.addEventListener('click', function() {
-        const selectedIds = Array.from(docCheckboxes)
-            .filter(cb => cb.checked)
-            .map(cb => cb.dataset.docId);
-
-        if (selectedIds.length === 0) return;
-
-        if (confirm(`Вы уверены, что хотите удалить ${selectedIds.length} документов?`)) {
-            deleteSelectedDocuments(selectedIds);
-        }
-    });
-});
-
-function updateDeleteButtonVisibility() {
-    const selectedCount = Array.from(document.getElementsByClassName('doc-select'))
-        .filter(cb => cb.checked).length;
-    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-    deleteSelectedBtn.style.display = selectedCount > 0 ? 'inline-block' : 'none';
-}
-
-function deleteSelectedDocuments(docIds) {
-    Promise.all(docIds.map(id => 
-        fetch(`/api/documents/${id}`, { method: 'DELETE' })
-    ))
-    .then(responses => {
-        const allSuccessful = responses.every(response => response.ok);
-        if (allSuccessful) {
-            location.reload();
-        } else {
-            throw new Error('Не удалось удалить некоторые документы');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert(error.message);
-    });
-}
-
 function submitAddDocument() {
-    const title = document.getElementById('addTitle').value;
-    const content = document.getElementById('addContent').value;
-
-    if (!title) {
-        alert('Пожалуйста, введите название документа');
+    const formData = new FormData();
+    const fileInput = document.getElementById('documentFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Пожалуйста, выберите файл');
         return;
     }
-
+    
+    formData.append('file', file);
+    
     fetch('/api/documents/', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            title: title,
-            content: content || null
-        })
+        body: formData
     })
     .then(response => {
         if (!response.ok) {
-            return response.json().then(err => {
-                throw new Error(err.detail || 'Ошибка при добавлении документа');
-            });
+            throw new Error('Ошибка при загрузке файла');
         }
         return response.json();
     })
     .then(data => {
-        document.getElementById('addTitle').value = '';
-        document.getElementById('addContent').value = '';
-        const modal = bootstrap.Modal.getInstance(document.getElementById('addDocumentModal'));
-        modal.hide();
         location.reload();
     })
     .catch(error => {
-        console.error('Error:', error);
         alert(error.message);
     });
 }
 
-function viewDocument(docId) {
-    fetch(`/api/documents/${docId}`)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Ошибка при загрузке документа');
-            }
-            return response.json();
-        })
-        .then(doc => {
-            document.getElementById('viewTitle').textContent = doc.title;
-            document.getElementById('viewContent').textContent = doc.content || 'Содержание отсутствует';
-            const modal = new bootstrap.Modal(document.getElementById('viewDocumentModal'));
-            modal.show();
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert(error.message);
-        });
+function deleteDocument(docId) {
+    if (!confirm('Вы уверены, что хотите удалить этот документ?')) {
+        return;
+    }
+    
+    fetch(`/api/documents/${docId}`, {
+        method: 'DELETE'
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Ошибка при удалении документа');
+        }
+        location.reload();
+    })
+    .catch(error => {
+        alert(error.message);
+    });
 }
 
-function deleteDocument(docId) {
-    if (confirm('Вы уверены, что хотите удалить этот документ?')) {
-        fetch(`/api/documents/${docId}`, {
-            method: 'DELETE'
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Ошибка при удалении документа');
-            }
-            location.reload();
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert(error.message);
-        });
-    }
-}
+// Инициализация DataTables
+$(document).ready(function() {
+    $('#documentsTable').DataTable({
+        language: {
+            url: '//cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json'
+        }
+    });
+});
 </script>
 {% endblock %} 
