@@ -1,21 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
-from ..core import security
+import logging
 from ..core.database import get_async_session
-from ..core.schemas import UserResponse, UserUpdate
+from ..core.schemas import UserResponse, UserCreate, UserUpdate
 from ..core.models import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=List[UserResponse])
 async def get_users(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_async_session)
-    # Temporarily disabled authentication
-    # current_user: User = Depends(security.get_current_active_admin)
 ):
     query = select(User).offset(skip).limit(limit)
     result = await db.execute(query)
@@ -26,8 +26,6 @@ async def get_users(
 async def get_user(
     user_id: int,
     db: AsyncSession = Depends(get_async_session)
-    # Temporarily disabled authentication
-    # current_user: User = Depends(security.get_current_active_admin)
 ):
     query = select(User).where(User.id == user_id)
     result = await db.execute(query)
@@ -36,13 +34,50 @@ async def get_user(
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
+@router.post("/", response_model=UserResponse)
+async def create_user(
+    user_create: UserCreate,
+    db: AsyncSession = Depends(get_async_session)
+):
+    try:
+        logger.info(f"Received user data: {user_create.dict()}")
+        user = User(
+            full_name=user_create.full_name,
+            department=user_create.department
+        )
+        logger.info(f"Creating user with data: {user.full_name}, {user.department}")
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        logger.info(f"Successfully created user with id: {user.id}")
+        
+        # Create a clean dict with only the needed fields
+        user_data = {
+            "id": user.id,
+            "full_name": user.full_name,
+            "department": user.department,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None
+        }
+        
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=user_data
+        )
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error creating user: {error_msg}")
+        await db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"Failed to create user: {error_msg}"}
+        )
+
 @router.put("/{user_id}", response_model=UserResponse)
 async def update_user(
     user_id: int,
     user_update: UserUpdate,
     db: AsyncSession = Depends(get_async_session)
-    # Temporarily disabled authentication
-    # current_user: User = Depends(security.get_current_active_admin)
 ):
     query = select(User).where(User.id == user_id)
     result = await db.execute(query)
@@ -50,12 +85,9 @@ async def update_user(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Update user fields
-    for field, value in user_update.dict(exclude_unset=True).items():
-        if field == "password" and value is not None:
-            setattr(user, "hashed_password", security.get_password_hash(value))
-        else:
-            setattr(user, field, value)
+    update_data = user_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
     
     await db.commit()
     await db.refresh(user)
@@ -65,8 +97,6 @@ async def update_user(
 async def delete_user(
     user_id: int,
     db: AsyncSession = Depends(get_async_session)
-    # Temporarily disabled authentication
-    # current_user: User = Depends(security.get_current_active_admin)
 ):
     query = select(User).where(User.id == user_id)
     result = await db.execute(query)
