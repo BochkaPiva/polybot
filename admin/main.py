@@ -4,19 +4,32 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
+import logging
 
 from .core.database import get_async_session
 from .core.models import User, Document
 from .api import users, documents
+from .core.config import settings
+from search.client import search_client
 
 # Создаем директорию для загрузки файлов, если она не существует
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-app = FastAPI(title="Admin Panel")
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION
+)
+
+# Настройка логгера
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Монтируем статическую директорию для загрузки файлов
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# Монтируем статические файлы
+app.mount("/static", StaticFiles(directory="admin/static"), name="static")
 
 # Подключаем шаблоны
 templates = Jinja2Templates(directory="admin/templates")
@@ -92,6 +105,16 @@ TEMPLATE_SETTINGS = {
     "site_name": "Admin Panel",
     "site_description": "Управление пользователями и документами"
 }
+
+@app.on_event("startup")
+async def startup_event():
+    """Инициализация при запуске приложения."""
+    try:
+        # Инициализируем OpenSearch
+        await search_client.init_index()
+        logger.info("OpenSearch успешно инициализирован")
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации OpenSearch: {str(e)}")
 
 @app.get("/")
 async def root(request: Request, db: AsyncSession = Depends(get_async_session)):

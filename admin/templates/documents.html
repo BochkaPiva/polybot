@@ -97,9 +97,9 @@
             <div class="modal-body">
                 <form id="addDocumentForm" enctype="multipart/form-data">
                     <div class="mb-3">
-                        <label for="documentFile" class="form-label">Выберите файл</label>
+                        <label for="documentFile" class="form-label">Выберите файлы</label>
                         <div class="input-group">
-                            <input type="file" class="form-control" id="documentFile" required multiple 
+                            <input type="file" class="form-control" id="documentFile" name="files" required multiple 
                                    accept=".pdf,.doc,.docx,.txt,.rtf,.jpg,.jpeg,.png">
                         </div>
                         <small class="text-muted">
@@ -277,76 +277,109 @@ function updateUploadStatus() {
 
 async function submitAddDocument() {
     const fileInput = document.getElementById('documentFile');
-    const files = fileInput.files;
-    
-    if (files.length === 0) {
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
         alert('Пожалуйста, выберите файлы');
         return;
     }
 
-    // Reset counters
-    currentUploadCount = 0;
-    totalUploadCount = files.length;
-    successfulUploads = 0;
-    failedUploads = 0;
-
-    // Show progress
-    const progressDiv = document.getElementById('uploadProgress');
-    progressDiv.classList.remove('d-none');
-    updateProgressBar(0);
-    updateUploadStatus();
-
-    // Upload each file
-    for (const file of files) {
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        try {
-            const response = await fetch('/api/documents/', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error(`Ошибка при загрузке файла ${file.name}`);
-            }
-
-            successfulUploads++;
-        } catch (error) {
-            console.error(error);
-            failedUploads++;
-        }
-
-        currentUploadCount++;
-        const progress = Math.round((currentUploadCount / totalUploadCount) * 100);
-        updateProgressBar(progress);
-        updateUploadStatus();
+    const formData = new FormData();
+    for (let i = 0; i < fileInput.files.length; i++) {
+        formData.append('files', fileInput.files[i]);
     }
 
-    if (failedUploads === 0) {
-        location.reload();
-    } else {
-        alert(`Загрузка завершена с ошибками. Успешно загружено: ${successfulUploads}, ошибок: ${failedUploads}`);
+    // Показываем прогресс загрузки
+    const progressDiv = document.getElementById('uploadProgress');
+    const progressBar = document.querySelector('#uploadProgress .progress-bar');
+    const statusDiv = document.getElementById('uploadStatus');
+    progressDiv.classList.remove('d-none');
+    progressBar.style.width = '0%';
+    progressBar.textContent = '0%';
+    statusDiv.textContent = 'Начало загрузки...';
+
+    try {
+        const response = await fetch('/api/documents/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.detail || 'Ошибка при добавлении документов');
+        }
+        
+        // Получаем ответ и показываем сообщение об успехе
+        const data = await response.json();
+        
+        // Обновляем прогресс
+        progressBar.style.width = '100%';
+        progressBar.textContent = '100%';
+        statusDiv.textContent = 'Загрузка завершена';
+        
+        // Закрываем модальное окно и обновляем таблицу
+        setTimeout(() => {
+            $('#addDocumentModal').modal('hide');
+            location.reload();
+        }, 1000);
+    } catch (error) {
+        console.error('Error:', error);
+        progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+        progressBar.classList.add('bg-danger');
+        progressBar.style.width = '100%';
+        progressBar.textContent = 'Ошибка';
+        statusDiv.textContent = error.message;
     }
 }
 
-function deleteDocument(docId) {
+async function submitEditDocument() {
+    const docId = document.getElementById('editDocumentId').value;
+    const title = document.getElementById('editDocumentTitle').value;
+    const content = document.getElementById('editDocumentContent').value;
+    
+    try {
+        const response = await fetch(`/api/documents/${docId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                title: title,
+                content: content
+            })
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.detail || 'Ошибка при обновлении документа');
+        }
+        
+        // Закрываем модальное окно и обновляем таблицу
+        $('#editDocumentModal').modal('hide');
+        location.reload();
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+async function deleteDocument(docId) {
     if (!confirm('Вы уверены, что хотите удалить этот документ?')) {
         return;
     }
     
-    fetch(`/api/documents/${docId}`, {
-        method: 'DELETE'
-    })
-    .then(response => {
+    try {
+        const response = await fetch(`/api/documents/${docId}`, {
+            method: 'DELETE'
+        });
+        
         if (!response.ok) {
-            throw new Error('Ошибка при удалении документа');
+            const data = await response.json();
+            throw new Error(data.detail || 'Ошибка при удалении документа');
         }
+        
+        // Обновляем таблицу
         location.reload();
-    })
-    .catch(error => {
+    } catch (error) {
         alert(error.message);
-    });
+    }
 }
 
 function previewDocument(docId) {

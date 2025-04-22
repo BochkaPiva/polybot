@@ -1,5 +1,7 @@
 import logging
 from opensearchpy import AsyncOpenSearch, RequestsHttpConnection
+import asyncio
+from datetime import datetime
 
 from config import (
     OPENSEARCH_HOST,
@@ -16,7 +18,7 @@ class SearchClient:
         self.client = AsyncOpenSearch(
             hosts=[{'host': OPENSEARCH_HOST, 'port': OPENSEARCH_PORT}],
             http_auth=(OPENSEARCH_USER, OPENSEARCH_PASS),
-            use_ssl=True,
+            use_ssl=False,
             verify_certs=False,
             ssl_show_warn=False,
         )
@@ -24,32 +26,37 @@ class SearchClient:
 
     async def init_index(self):
         """Инициализация индекса OpenSearch"""
-        if not await self.client.indices.exists(index=self.index):
-            await self.client.indices.create(
-                index=self.index,
-                body={
-                    "settings": {
-                        "analysis": {
-                            "analyzer": {
-                                "russian": {
-                                    "type": "custom",
-                                    "tokenizer": "standard",
-                                    "filter": ["lowercase", "russian_morphology", "english_morphology"]
+        try:
+            if not await self.client.indices.exists(index=self.index):
+                await self.client.indices.create(
+                    index=self.index,
+                    body={
+                        "settings": {
+                            "analysis": {
+                                "analyzer": {
+                                    "russian": {
+                                        "type": "custom",
+                                        "tokenizer": "standard",
+                                        "filter": ["lowercase", "russian_morphology", "english_morphology"]
+                                    }
                                 }
                             }
-                        }
-                    },
-                    "mappings": {
-                        "properties": {
-                            "title": {"type": "text", "analyzer": "russian"},
-                            "content": {"type": "text", "analyzer": "russian"},
-                            "tags": {"type": "keyword"},
-                            "file_type": {"type": "keyword"},
-                            "created_at": {"type": "date"}
+                        },
+                        "mappings": {
+                            "properties": {
+                                "title": {"type": "text", "analyzer": "russian"},
+                                "content": {"type": "text", "analyzer": "russian"},
+                                "tags": {"type": "keyword"},
+                                "file_type": {"type": "keyword"},
+                                "created_at": {"type": "date"}
+                            }
                         }
                     }
-                }
-            )
+                )
+            logger.info("OpenSearch индекс успешно инициализирован")
+        except Exception as e:
+            logger.error(f"Ошибка при инициализации OpenSearch: {str(e)}")
+            raise
 
     async def index_document(self, doc_id: int, title: str, content: str, tags: list, file_type: str):
         """Индексация документа"""
@@ -61,7 +68,7 @@ class SearchClient:
                 "content": content,
                 "tags": tags,
                 "file_type": file_type,
-                "created_at": "now"
+                "created_at": datetime.utcnow().isoformat()
             }
         )
 
