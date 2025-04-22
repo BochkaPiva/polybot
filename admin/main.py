@@ -21,6 +21,68 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 # Подключаем шаблоны
 templates = Jinja2Templates(directory="admin/templates")
 
+# Добавляем вспомогательные функции для шаблонов
+def get_file_icon(file_type: str) -> str:
+    """Возвращает класс иконки Font Awesome в зависимости от типа файла"""
+    if not file_type:
+        return "fa-file"
+        
+    file_type = file_type.lower()
+    if file_type.startswith("image/"):
+        return "fa-file-image"
+    elif file_type == "application/pdf":
+        return "fa-file-pdf"
+    elif file_type in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+        return "fa-file-word"
+    elif file_type == "text/plain":
+        return "fa-file-alt"
+    elif file_type.startswith("video/"):
+        return "fa-file-video"
+    elif file_type.startswith("audio/"):
+        return "fa-file-audio"
+    else:
+        return "fa-file"
+
+def get_file_color(file_type: str) -> str:
+    """Возвращает класс цвета Bootstrap в зависимости от типа файла"""
+    if not file_type:
+        return "secondary"
+        
+    file_type = file_type.lower()
+    if file_type.startswith("image/"):
+        return "success"
+    elif file_type == "application/pdf":
+        return "danger"
+    elif file_type in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+        return "primary"
+    elif file_type == "text/plain":
+        return "info"
+    elif file_type.startswith("video/"):
+        return "warning"
+    elif file_type.startswith("audio/"):
+        return "warning"
+    else:
+        return "secondary"
+
+def is_previewable(file_type: str) -> bool:
+    """Проверяет, можно ли предварительно просмотреть файл"""
+    if not file_type:
+        return False
+        
+    file_type = file_type.lower()
+    return (
+        file_type.startswith("image/") or
+        file_type == "application/pdf" or
+        file_type == "text/plain"
+    )
+
+# Добавляем функции в контекст шаблонов
+templates.env.globals.update({
+    "get_file_icon": get_file_icon,
+    "get_file_color": get_file_color,
+    "is_previewable": is_previewable
+})
+
 # Подключаем роутеры
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(documents.router, prefix="/api/documents", tags=["documents"])

@@ -25,20 +25,29 @@ class UserResponse(UserBase):
         }
 
 class DocumentBase(BaseModel):
-    title: str
-    content: Optional[str] = None
+    original_filename: str
+    file_type: Optional[str] = None
+    content_text: Optional[str] = None
 
 class DocumentCreate(DocumentBase):
-    pass
+    system_filename: str
+    file_size: int
+    user_id: Optional[int] = None
 
 class DocumentUpdate(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
+    original_filename: Optional[str] = None
+    content_text: Optional[str] = None
 
 class DocumentResponse(DocumentBase):
     id: int
+    system_filename: str
+    file_size: int
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
+    user_id: Optional[int] = None
 
     class Config:
-        from_attributes = True 
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat() if dt else None
+        } 
