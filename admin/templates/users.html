@@ -132,142 +132,114 @@
 <script>
 let dataTable;
 
-function initializeDataTable() {
+document.addEventListener('DOMContentLoaded', function() {
+    // Инициализация таблицы
     const table = document.getElementById('usersTable');
     if (table) {
-        dataTable = new simpleDatatables.DataTable(table, {
-            searchable: true,
-            sortable: true,
-            perPage: 10,
-            columns: [
-                { select: 0, sortable: false }, // Отключаем сортировку для столбца с чекбоксами
-                { select: [1,2,3,4], sortable: true },
-                { select: 5, sortable: false } // Отключаем сортировку для столбца с действиями
+        dataTable = $('#usersTable').DataTable({
+            language: {
+                url: '//cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json'
+            },
+            columnDefs: [
+                { orderable: false, targets: [0, 5] }
             ],
-            labels: {
-                placeholder: "Поиск...",
-                perPage: "{select} записей на странице",
-                noRows: "Записи не найдены",
-                info: "Показано с {start} по {end} из {rows} записей",
-                noResults: "Нет результатов по вашему запросу"
-            }
+            pageLength: 10
         });
 
-        // Ждем полной инициализации таблицы
-        dataTable.on('datatable.init', () => {
-            console.log('DataTable initialized');
-            setupCheckboxHandlers();
-        });
+        // Настройка обработчиков чекбоксов
+        setupCheckboxHandlers();
 
-        // Обновляем обработчики при изменении страницы/сортировки/фильтрации
-        dataTable.on('datatable.page datatable.sort datatable.filter', () => {
-            console.log('Table updated');
+        // Обновление обработчиков при изменении данных таблицы
+        dataTable.on('draw', function() {
             setTimeout(setupCheckboxHandlers, 100);
         });
     }
-}
 
-function setupCheckboxHandlers() {
-    const selectAllCheckbox = document.getElementById('selectAll');
-    const userCheckboxes = document.getElementsByClassName('user-select');
-
-    // Удаляем предыдущие обработчики через клонирование
-    if (selectAllCheckbox) {
-        const newSelectAll = selectAllCheckbox.cloneNode(true);
-        selectAllCheckbox.parentNode.replaceChild(newSelectAll, selectAllCheckbox);
-
-        // Добавляем обработчик клика
-        newSelectAll.onclick = function() {
-            const isChecked = this.checked;
-            Array.from(userCheckboxes).forEach(checkbox => {
-                checkbox.checked = isChecked;
-            });
-            updateDeleteButtonVisibility();
-        };
-    }
-
-    // Обновляем обработчики для отдельных чекбоксов
-    Array.from(userCheckboxes).forEach(checkbox => {
-        const newCheckbox = checkbox.cloneNode(true);
-        checkbox.parentNode.replaceChild(newCheckbox, checkbox);
-
-        newCheckbox.onclick = function() {
-            updateSelectAllState();
-            updateDeleteButtonVisibility();
-        };
-    });
-
-    updateSelectAllState();
-    updateDeleteButtonVisibility();
-}
-
-function updateSelectAllState() {
-    const selectAllCheckbox = document.getElementById('selectAll');
-    const userCheckboxes = Array.from(document.getElementsByClassName('user-select'));
-    
-    if (selectAllCheckbox && userCheckboxes.length > 0) {
-        const allChecked = userCheckboxes.every(cb => cb.checked);
-        const someChecked = userCheckboxes.some(cb => cb.checked);
-        
-        selectAllCheckbox.checked = allChecked;
-        selectAllCheckbox.indeterminate = someChecked && !allChecked;
-    }
-}
-
-function updateDeleteButtonVisibility() {
-    const selectedCount = Array.from(document.getElementsByClassName('user-select'))
-        .filter(cb => cb.checked).length;
-    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-    
-    if (deleteSelectedBtn) {
-        deleteSelectedBtn.style.display = selectedCount > 0 ? 'inline-block' : 'none';
-        deleteSelectedBtn.textContent = `Удалить выбранные (${selectedCount})`;
-    }
-}
-
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', function() {
-    initializeDataTable();
+    // Настройка кнопки удаления выбранных
     setupDeleteSelectedButton();
 });
 
-function setupDeleteSelectedButton() {
-    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-    if (deleteSelectedBtn) {
-        deleteSelectedBtn.addEventListener('click', function() {
-            const selectedCheckboxes = Array.from(document.getElementsByClassName('user-select'))
-                .filter(cb => cb.checked);
-            
-            if (selectedCheckboxes.length === 0) {
-                alert('Пожалуйста, выберите пользователей для удаления');
-                return;
+function setupCheckboxHandlers() {
+    // Главный чекбокс
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) {
+        selectAll.onclick = function() {
+            const checkboxes = document.getElementsByClassName('user-select');
+            for (let checkbox of checkboxes) {
+                checkbox.checked = this.checked;
             }
+            updateDeleteButton();
+        };
+    }
 
-            const userIds = selectedCheckboxes.map(cb => cb.dataset.userId);
-            
-            if (confirm(`Вы уверены, что хотите удалить ${selectedCheckboxes.length} выбранных пользователей?`)) {
-                deleteSelectedUsers(userIds);
-            }
-        });
+    // Отдельные чекбоксы
+    const checkboxes = document.getElementsByClassName('user-select');
+    for (let checkbox of checkboxes) {
+        checkbox.onclick = function() {
+            updateSelectAllState();
+            updateDeleteButton();
+        };
+    }
+
+    updateSelectAllState();
+    updateDeleteButton();
+}
+
+function updateSelectAllState() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.getElementsByClassName('user-select');
+    const total = checkboxes.length;
+    const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+    
+    if (selectAll) {
+        selectAll.checked = total === checked;
+        selectAll.indeterminate = checked > 0 && checked < total;
     }
 }
 
-function deleteSelectedUsers(userIds) {
-    Promise.all(userIds.map(id => 
-        fetch(`/api/users/${id}`, { method: 'DELETE' })
-    ))
-    .then(responses => {
-        const allSuccessful = responses.every(response => response.ok);
-        if (allSuccessful) {
-            location.reload();
-        } else {
-            throw new Error('Не удалось удалить некоторых пользователей');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert(error.message);
-    });
+function updateDeleteButton() {
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    const checkedCount = Array.from(document.getElementsByClassName('user-select'))
+        .filter(cb => cb.checked)
+        .length;
+    
+    if (deleteBtn) {
+        deleteBtn.style.display = checkedCount > 0 ? 'inline-block' : 'none';
+        deleteBtn.innerHTML = `<i class="fas fa-trash me-1"></i> Удалить выбранные (${checkedCount})`;
+    }
+}
+
+function setupDeleteSelectedButton() {
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    if (deleteBtn) {
+        deleteBtn.onclick = function() {
+            const selectedIds = Array.from(document.getElementsByClassName('user-select'))
+                .filter(cb => cb.checked)
+                .map(cb => cb.dataset.userId);
+
+            if (selectedIds.length === 0) {
+                alert('Выберите пользователей для удаления');
+                return;
+            }
+
+            if (confirm(`Удалить выбранных пользователей (${selectedIds.length} шт.)?`)) {
+                Promise.all(selectedIds.map(id => 
+                    fetch(`/api/users/${id}`, { method: 'DELETE' })
+                ))
+                .then(responses => {
+                    if (responses.every(r => r.ok)) {
+                        location.reload();
+                    } else {
+                        throw new Error('Ошибка при удалении пользователей');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert(error.message);
+                });
+            }
+        };
+    }
 }
 
 function submitAddUser() {
@@ -387,30 +359,5 @@ function deleteUser(userId) {
         });
     }
 }
-
-// Добавляем стили для исправления отображения чекбоксов
-document.addEventListener('DOMContentLoaded', function() {
-    const style = document.createElement('style');
-    style.textContent = `
-        .form-check-input {
-            margin: 0 !important;
-            cursor: pointer;
-            padding: 0;
-            width: 1rem;
-            height: 1rem;
-            appearance: checkbox !important;
-            -webkit-appearance: checkbox !important;
-            -moz-appearance: checkbox !important;
-        }
-        .form-check {
-            padding: 0 !important;
-            margin: 0 !important;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-    `;
-    document.head.appendChild(style);
-});
 </script>
 {% endblock %} 

@@ -26,8 +26,10 @@
                 <table class="table table-bordered table-hover" id="documentsTable" width="100%" cellspacing="0">
                     <thead>
                         <tr>
-                            <th width="40px">
-                                <input type="checkbox" class="form-check-input" id="selectAll">
+                            <th style="width: 40px; min-width: 40px; max-width: 40px;">
+                                <div class="form-check d-flex justify-content-center align-items-center" style="min-height: 0;">
+                                    <input type="checkbox" class="form-check-input" id="selectAll" style="margin: 0; cursor: pointer;">
+                                </div>
                             </th>
                             <th>ID</th>
                             <th>Название файла</th>
@@ -40,11 +42,13 @@
                     <tbody>
                         {% for doc in documents %}
                         <tr>
-                            <td>
-                                <input type="checkbox" class="form-check-input doc-select" data-doc-id="{{ doc.id }}">
+                            <td class="text-center align-middle" style="width: 40px;">
+                                <div class="form-check d-flex justify-content-center align-items-center" style="min-height: 0; margin: 0;">
+                                    <input type="checkbox" class="form-check-input doc-select" id="doc-{{ doc.id }}" data-doc-id="{{ doc.id }}" style="margin: 0; cursor: pointer;">
+                                </div>
                             </td>
-                            <td>{{ doc.id }}</td>
-                            <td>
+                            <td class="align-middle">{{ doc.id }}</td>
+                            <td class="align-middle">
                                 <div class="d-flex align-items-center">
                                     <i class="fas {{ get_file_icon(doc.file_type) }} fa-2x me-2 text-{{ get_file_color(doc.file_type) }}"></i>
                                     <div>
@@ -55,20 +59,20 @@
                                     </div>
                                 </div>
                             </td>
-                            <td><span class="badge bg-secondary">{{ doc.file_type }}</span></td>
-                            <td>{{ doc.file_size|filesizeformat }}</td>
-                            <td>{{ doc.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
-                            <td>
+                            <td class="align-middle"><span class="badge bg-secondary">{{ doc.file_type }}</span></td>
+                            <td class="align-middle">{{ doc.file_size|filesizeformat }}</td>
+                            <td class="align-middle">{{ doc.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+                            <td class="align-middle">
                                 <div class="btn-group">
                                     {% if is_previewable(doc.file_type) %}
-                                    <button type="button" class="btn btn-primary" onclick="previewDocument({{ doc.id }})">
+                                    <button type="button" class="btn btn-sm btn-primary" onclick="previewDocument({{ doc.id }})">
                                         <i class="fas fa-eye me-1"></i> Просмотр
                                     </button>
                                     {% endif %}
-                                    <a href="/uploads/{{ doc.system_filename }}" class="btn btn-info" download="{{ doc.original_filename }}">
+                                    <a href="/uploads/{{ doc.system_filename }}" class="btn btn-sm btn-info" download="{{ doc.original_filename }}">
                                         <i class="fas fa-download me-1"></i> Скачать
                                     </a>
-                                    <button type="button" class="btn btn-danger" onclick="deleteDocument({{ doc.id }})">
+                                    <button type="button" class="btn btn-sm btn-danger" onclick="deleteDocument({{ doc.id }})">
                                         <i class="fas fa-trash me-1"></i> Удалить
                                     </button>
                                 </div>
@@ -138,11 +142,122 @@
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
 <script>
+let dataTable;
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Инициализация таблицы
+    const table = document.getElementById('documentsTable');
+    if (table) {
+        dataTable = $('#documentsTable').DataTable({
+            language: {
+                url: '//cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json'
+            },
+            columnDefs: [
+                { orderable: false, targets: [0, 6] }
+            ],
+            pageLength: 10
+        });
+
+        // Настройка обработчиков чекбоксов
+        setupCheckboxHandlers();
+
+        // Обновление обработчиков при изменении данных таблицы
+        dataTable.on('draw', function() {
+            setTimeout(setupCheckboxHandlers, 100);
+        });
+    }
+
+    // Настройка кнопки удаления выбранных
+    setupDeleteSelectedButton();
+});
+
+function setupCheckboxHandlers() {
+    // Главный чекбокс
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) {
+        selectAll.onclick = function() {
+            const checkboxes = document.getElementsByClassName('doc-select');
+            for (let checkbox of checkboxes) {
+                checkbox.checked = this.checked;
+            }
+            updateDeleteButton();
+        };
+    }
+
+    // Отдельные чекбоксы
+    const checkboxes = document.getElementsByClassName('doc-select');
+    for (let checkbox of checkboxes) {
+        checkbox.onclick = function() {
+            updateSelectAllState();
+            updateDeleteButton();
+        };
+    }
+
+    updateSelectAllState();
+    updateDeleteButton();
+}
+
+function updateSelectAllState() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.getElementsByClassName('doc-select');
+    const total = checkboxes.length;
+    const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+    
+    if (selectAll) {
+        selectAll.checked = total === checked;
+        selectAll.indeterminate = checked > 0 && checked < total;
+    }
+}
+
+function updateDeleteButton() {
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    const checkedCount = Array.from(document.getElementsByClassName('doc-select'))
+        .filter(cb => cb.checked)
+        .length;
+    
+    if (deleteBtn) {
+        deleteBtn.style.display = checkedCount > 0 ? 'inline-block' : 'none';
+        deleteBtn.innerHTML = `<i class="fas fa-trash me-1"></i> Удалить выбранные (${checkedCount})`;
+    }
+}
+
+function setupDeleteSelectedButton() {
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    if (deleteBtn) {
+        deleteBtn.onclick = function() {
+            const selectedIds = Array.from(document.getElementsByClassName('doc-select'))
+                .filter(cb => cb.checked)
+                .map(cb => cb.dataset.docId);
+
+            if (selectedIds.length === 0) {
+                alert('Выберите документы для удаления');
+                return;
+            }
+
+            if (confirm(`Удалить выбранные документы (${selectedIds.length} шт.)?`)) {
+                Promise.all(selectedIds.map(id => 
+                    fetch(`/api/documents/${id}`, { method: 'DELETE' })
+                ))
+                .then(responses => {
+                    if (responses.every(r => r.ok)) {
+                        location.reload();
+                    } else {
+                        throw new Error('Ошибка при удалении документов');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert(error.message);
+                });
+            }
+        };
+    }
+}
+
 let currentUploadCount = 0;
 let totalUploadCount = 0;
 let successfulUploads = 0;
@@ -257,38 +372,6 @@ function previewDocument(docId) {
         });
     
     previewModal.show();
-}
-
-// Инициализация DataTables
-$(document).ready(function() {
-    const table = $('#documentsTable').DataTable({
-        language: {
-            url: '//cdn.datatables.net/plug-ins/1.13.7/i18n/ru.json'
-        },
-        order: [[5, 'desc']], // Сортировка по дате создания по умолчанию
-        columnDefs: [
-            { orderable: false, targets: [0, 6] } // Отключаем сортировку для чекбокса и действий
-        ]
-    });
-
-    // Обработка выбора всех документов
-    $('#selectAll').on('change', function() {
-        const checked = $(this).prop('checked');
-        $('.doc-select').prop('checked', checked);
-        updateDeleteButtonVisibility();
-    });
-
-    // Обработка выбора отдельных документов
-    $('.doc-select').on('change', function() {
-        updateDeleteButtonVisibility();
-        const allChecked = $('.doc-select:checked').length === $('.doc-select').length;
-        $('#selectAll').prop('checked', allChecked);
-    });
-});
-
-function updateDeleteButtonVisibility() {
-    const checkedCount = $('.doc-select:checked').length;
-    $('#deleteSelectedBtn').toggle(checkedCount > 0);
 }
 </script>
 {% endblock %} 

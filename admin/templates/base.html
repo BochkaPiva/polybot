@@ -156,6 +156,88 @@
                 margin-left: 0;
             }
         }
+
+        /* Стили для чекбоксов */
+        .form-check-input {
+            margin: 0 !important;
+            cursor: pointer;
+            padding: 0;
+            width: 1.2rem;
+            height: 1.2rem;
+            border: 2px solid #6c757d;
+            border-radius: 4px;
+            transition: all 0.2s ease-in-out;
+            position: relative;
+            appearance: none !important;
+            -webkit-appearance: none !important;
+            -moz-appearance: none !important;
+            background-image: none !important;
+            background-color: transparent !important;
+        }
+
+        .form-check-input:checked {
+            background-color: #0d6efd !important;
+            border-color: #0d6efd !important;
+            background-image: none !important;
+        }
+
+        .form-check-input:checked::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 45%;
+            width: 0.3rem;
+            height: 0.6rem;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: translate(-50%, -50%) rotate(45deg);
+            background: none !important;
+        }
+
+        .form-check-input:focus {
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+            border-color: #0d6efd;
+        }
+
+        .form-check-input:indeterminate {
+            background-color: #0d6efd !important;
+            border-color: #0d6efd !important;
+            background-image: none !important;
+        }
+
+        .form-check-input:indeterminate::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 0.6rem;
+            height: 2px;
+            background-color: white;
+            transform: translate(-50%, -50%);
+        }
+
+        .form-check {
+            padding: 0 !important;
+            margin: 0 !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 1.2rem;
+            background: none !important;
+        }
+
+        /* Отключаем стандартные стили Bootstrap для чекбоксов */
+        .form-check-input[type="checkbox"] {
+            background-image: none !important;
+        }
+
+        .form-check-input[type="checkbox"]:checked {
+            background-image: none !important;
+        }
+
+        .form-check-input[type="checkbox"]:indeterminate {
+            background-image: none !important;
+        }
     </style>
 </head>
 <body>
