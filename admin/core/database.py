@@ -2,10 +2,10 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
-from admin.core.config import Config
+from admin.core.config import settings
 
 # URL для подключения к базе данных
-DATABASE_URL = f"postgresql+asyncpg://{Config.DB_USER}:{Config.DB_PASSWORD}@{Config.DB_HOST}:{Config.DB_PORT}/{Config.DB_NAME}"
+DATABASE_URL = f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
 # Создаем асинхронный движок
 engine = create_async_engine(DATABASE_URL, echo=True)
@@ -26,4 +26,11 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
             await session.rollback()
             raise
         finally:
-            await session.close() 
+            await session.close()
+
+async def init_db():
+    """Initialize the database by creating all tables."""
+    async with engine.begin() as conn:
+        # Import models here to avoid circular imports
+        from admin.core.models import User, Document, Chat
+        await conn.run_sync(Base.metadata.create_all) 

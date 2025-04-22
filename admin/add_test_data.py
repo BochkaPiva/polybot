@@ -1,55 +1,52 @@
 import asyncio
 import logging
-from datetime import datetime
-
-from admin.core.database import async_session_maker
-from admin.core.models import User, Document, Chat
+from sqlalchemy import select
+from .core.database import async_session_maker
+from .core.models import User, Document
+from .core.security import get_password_hash
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def add_test_data():
-    try:
-        async with async_session_maker() as session:
-            # Создаем тестового пользователя
+    """Add test data to the database."""
+    logger.info("Adding test data...")
+    
+    async with async_session_maker() as session:
+        try:
+            # Check if test user already exists
+            result = await session.execute(select(User).where(User.username == "admin"))
+            if result.scalar_one_or_none():
+                logger.info("Test data already exists")
+                return
+            
+            # Create test user
             test_user = User(
-                unique_id="123456789",
-                username="test_user",
-                first_name="Test",
+                username="admin",
+                hashed_password=get_password_hash("admin123"),
+                first_name="Admin",
                 last_name="User",
                 is_active=True,
                 is_admin=True
             )
             session.add(test_user)
-            await session.flush()
-            logger.info(f"Created test user with ID: {test_user.id}")
-
-            # Создаем тестовый документ
-            test_doc = Document(
-                title="Test Document",
-                content="This is a test document content",
-                file_path="/path/to/test.pdf",
-                file_type="pdf"
-            )
-            session.add(test_doc)
-            await session.flush()
-            logger.info(f"Created test document with ID: {test_doc.id}")
-
-            # Создаем тестовый чат
-            test_chat = Chat(
-                user_id=test_user.id,
-                message="Hello, bot!",
-                response="Hello, user!"
-            )
-            session.add(test_chat)
             await session.commit()
-            logger.info(f"Created test chat with ID: {test_chat.id}")
-
+            
+            # Create test document
+            test_document = Document(
+                title="Test Document",
+                content="This is a test document",
+                file_path="/path/to/test/document.txt",
+                file_type="txt",
+                owner_id=test_user.id
+            )
+            session.add(test_document)
+            await session.commit()
+            
             logger.info("Test data added successfully!")
-
-    except Exception as e:
-        logger.error(f"Error adding test data: {str(e)}")
-        raise
+        except Exception as e:
+            logger.error(f"Error adding test data: {e}")
+            raise
 
 if __name__ == "__main__":
     asyncio.run(add_test_data()) 

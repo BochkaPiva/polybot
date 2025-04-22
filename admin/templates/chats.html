@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="content">
+    <h1>Chats</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>User ID</th>
+                <th>Message</th>
+                <th>Response</th>
+                <th>Created At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chat in chats %}
+            <tr>
+                <td>{{ chat.id }}</td>
+                <td>{{ chat.user_id }}</td>
+                <td>{{ chat.message }}</td>
+                <td>{{ chat.response }}</td>
+                <td>{{ chat.created_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %} 
