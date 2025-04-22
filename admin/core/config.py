@@ -1,5 +1,4 @@
-from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
+from pydantic import BaseSettings, ConfigDict, validator
 import os
 from typing import List, Optional
 
@@ -22,7 +21,13 @@ class Settings(BaseSettings):
     
     # Bot settings
     BOT_TOKEN: Optional[str] = None
-    ADMIN_IDS: Optional[List[str]] = None
+    ADMIN_IDS: str = ""
+    
+    @validator("ADMIN_IDS")
+    def parse_admin_ids(cls, v: str) -> List[str]:
+        if not v:
+            return []
+        return [id.strip() for id in v.split(",")]
     
     # OpenSearch settings
     OPENSEARCH_HOST: str = "localhost"

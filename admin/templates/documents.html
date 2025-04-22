@@ -277,56 +277,91 @@ function updateUploadStatus() {
 
 async function submitAddDocument() {
     const fileInput = document.getElementById('documentFile');
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-        alert('Пожалуйста, выберите файлы');
+    const progressBar = document.getElementById('uploadProgress');
+    const statusDiv = document.getElementById('uploadStatus');
+    
+    if (!fileInput.files.length) {
+        alert('Пожалуйста, выберите файлы для загрузки');
         return;
     }
-
+    
     const formData = new FormData();
     for (let i = 0; i < fileInput.files.length; i++) {
         formData.append('files', fileInput.files[i]);
     }
-
-    // Показываем прогресс загрузки
-    const progressDiv = document.getElementById('uploadProgress');
-    const progressBar = document.querySelector('#uploadProgress .progress-bar');
-    const statusDiv = document.getElementById('uploadStatus');
-    progressDiv.classList.remove('d-none');
-    progressBar.style.width = '0%';
-    progressBar.textContent = '0%';
-    statusDiv.textContent = 'Начало загрузки...';
-
+    
     try {
+        // Сбрасываем прогресс
+        if (progressBar) {
+            progressBar.classList.remove('d-none');
+            const progressBarElement = progressBar.querySelector('.progress-bar');
+            if (progressBarElement) {
+                progressBarElement.style.width = '0%';
+                progressBarElement.textContent = '0%';
+                progressBarElement.classList.remove('bg-danger');
+                progressBarElement.classList.add('progress-bar-striped', 'progress-bar-animated');
+            }
+        }
+        
+        if (statusDiv) {
+            statusDiv.textContent = 'Загрузка...';
+        }
+        
         const response = await fetch('/api/documents/', {
             method: 'POST',
             body: formData
         });
         
         if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.detail || 'Ошибка при добавлении документов');
+            let errorMessage = 'Ошибка при загрузке файлов';
+            try {
+                const data = await response.json();
+                errorMessage = data.detail || errorMessage;
+            } catch (e) {
+                console.error('Ошибка при разборе ответа:', e);
+            }
+            throw new Error(errorMessage);
         }
         
-        // Получаем ответ и показываем сообщение об успехе
-        const data = await response.json();
-        
         // Обновляем прогресс
-        progressBar.style.width = '100%';
-        progressBar.textContent = '100%';
-        statusDiv.textContent = 'Загрузка завершена';
+        if (progressBar) {
+            const progressBarElement = progressBar.querySelector('.progress-bar');
+            if (progressBarElement) {
+                progressBarElement.style.width = '100%';
+                progressBarElement.textContent = '100%';
+            }
+        }
+        
+        if (statusDiv) {
+            statusDiv.textContent = 'Загрузка завершена';
+        }
         
         // Закрываем модальное окно и обновляем таблицу
         setTimeout(() => {
-            $('#addDocumentModal').modal('hide');
+            const modal = document.getElementById('addDocumentModal');
+            if (modal) {
+                const bsModal = bootstrap.Modal.getInstance(modal);
+                if (bsModal) {
+                    bsModal.hide();
+                }
+            }
             location.reload();
         }, 1000);
     } catch (error) {
         console.error('Error:', error);
-        progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
-        progressBar.classList.add('bg-danger');
-        progressBar.style.width = '100%';
-        progressBar.textContent = 'Ошибка';
-        statusDiv.textContent = error.message;
+        if (progressBar) {
+            const progressBarElement = progressBar.querySelector('.progress-bar');
+            if (progressBarElement) {
+                progressBarElement.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                progressBarElement.classList.add('bg-danger');
+                progressBarElement.style.width = '100%';
+                progressBarElement.textContent = 'Ошибка';
+            }
+        }
+        
+        if (statusDiv) {
+            statusDiv.textContent = error.message;
+        }
     }
 }
 

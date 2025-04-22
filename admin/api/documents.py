@@ -22,74 +22,129 @@ from search import search_service
 import logging
 from fastapi.responses import JSONResponse
 from search.client import search_client
+from search.embeddings import embedding_generator
+from search.text_cleaner import TextCleaner
+from search.text_manager import TextManager
+import hashlib
+from pathlib import Path
+import textract
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('document_upload.log')
+    ]
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+text_cleaner = TextCleaner()
+text_manager = TextManager()
 
 # Создаем директорию для загрузки файлов, если она не существует
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+logger.info(f"Директория для загрузки файлов: {UPLOAD_DIR}")
 
-async def extract_text_from_file(file_path: str, file_type: str) -> str:
-    """Извлекает текст из файла в зависимости от его типа"""
-    try:
-        if file_type == "application/pdf":
-            with open(file_path, 'rb') as file:
-                reader = PyPDF2.PdfReader(file)
-                text = ""
-                for page in reader.pages:
-                    text += page.extract_text() + "\n"
-                return text
-                
-        elif file_type in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
-            doc = docx.Document(file_path)
-            return "\n".join([paragraph.text for paragraph in doc.paragraphs])
-            
-        elif file_type.startswith("image/"):
-            image = Image.open(file_path)
-            return pytesseract.image_to_string(image, lang='rus+eng')
-            
-        elif file_type == "text/plain":
-            async with aiofiles.open(file_path, mode='r', encoding='utf-8') as file:
-                return await file.read()
-                
-        return ""
-    except Exception as e:
-        print(f"Error extracting text: {str(e)}")
-        return ""
+def calculate_file_hash(file_content: bytes) -> str:
+    """Calculate SHA-256 hash of file content"""
+    return hashlib.sha256(file_content).hexdigest()
 
-async def process_document(document_id: int, db: AsyncSession):
-    """Фоновая обработка документа: извлечение текста"""
+async def extract_text(file_path: str) -> str:
+    """Извлечение текста из файла"""
     try:
-        # Получаем документ
-        query = select(Document).where(Document.id == document_id)
-        result = await db.execute(query)
-        document = result.scalar_one_or_none()
+        logger.info(f"Попытка извлечь текст из файла: {file_path}")
+        if not os.path.exists(file_path):
+            logger.error(f"Файл не найден: {file_path}")
+            raise FileNotFoundError(f"Файл не найден: {file_path}")
+            
+        # Проверяем размер файла
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            logger.error(f"Файл пустой: {file_path}")
+            raise ValueError(f"Файл пустой: {file_path}")
+            
+        logger.info(f"Размер файла: {file_size} байт")
         
-        if not document:
-            return
+        # Определяем тип файла
+        mime_type, _ = mimetypes.guess_type(file_path)
+        logger.info(f"Определен MIME тип: {mime_type}")
+        
+        if mime_type is None:
+            logger.error(f"Не удалось определить тип файла: {file_path}")
+            raise ValueError(f"Не удалось определить тип файла: {file_path}")
             
-        # Получаем путь к файлу
-        file_path = os.path.join(UPLOAD_DIR, document.system_filename)
+        # Извлекаем текст в зависимости от типа файла
+        if mime_type == 'application/pdf':
+            logger.info("Обработка PDF файла")
+            with open(file_path, 'rb') as f:
+                pdf_reader = PyPDF2.PdfReader(f)
+                text = ""
+                for page in pdf_reader.pages:
+                    text += page.extract_text()
+        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            logger.info("Обработка DOCX файла")
+            doc = docx.Document(file_path)
+            text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+        elif mime_type.startswith('image/'):
+            logger.info("Обработка изображения")
+            text = pytesseract.image_to_string(Image.open(file_path), lang='rus')
+        else:
+            logger.error(f"Неподдерживаемый тип файла: {mime_type}")
+            raise ValueError(f"Неподдерживаемый тип файла: {mime_type}")
+            
+        if not text.strip():
+            logger.error("Не удалось извлечь текст из файла")
+            raise ValueError("Не удалось извлечь текст из файла")
+            
+        logger.info(f"Успешно извлечен текст длиной {len(text)} символов")
+        return text
+    except Exception as e:
+        logger.error(f"Ошибка при извлечении текста: {str(e)}", exc_info=True)
+        raise
+
+async def process_document(file_path: str, file_hash: str) -> tuple[str, int]:
+    """Обработка документа: извлечение и очистка текста"""
+    try:
+        logger.info(f"Начало обработки документа: {file_path}")
         
         # Извлекаем текст
-        content_text = await extract_text_from_file(file_path, document.file_type)
+        raw_text = await extract_text(file_path)
+        if not raw_text:
+            logger.error("Не удалось извлечь текст из файла")
+            raise ValueError("Не удалось извлечь текст из файла")
+            
+        logger.info("Текст успешно извлечен")
         
-        # Обновляем документ в базе данных
-        document.content_text = content_text
-        await db.commit()
+        # Сохраняем исходный текст
+        text_manager.save_raw_text(file_hash, raw_text)
+        logger.info("Исходный текст сохранен")
         
-        # Обновляем документ в OpenSearch
-        await search_client.index_document(
-            doc_id=document.id,
-            title=document.original_filename,
-            content=content_text,
-            tags=[],
-            file_type=document.file_type
-        )
+        # Очищаем текст
+        cleaned_text = text_cleaner.clean_text(raw_text)
+        if not cleaned_text:
+            logger.error("Очищенный текст пустой")
+            raise ValueError("Очищенный текст пустой")
+            
+        logger.info("Текст успешно очищен")
+        
+        # Получаем текущую версию
+        current_version = text_manager.get_latest_version(file_hash)
+        new_version = current_version + 1
+        logger.info(f"Новая версия текста: {new_version}")
+        
+        # Сохраняем очищенный текст
+        text_manager.save_cleaned_text(file_hash, cleaned_text, new_version)
+        logger.info("Очищенный текст сохранен")
+        
+        return cleaned_text, new_version
         
     except Exception as e:
-        logger.error(f"Ошибка при обработке документа: {str(e)}")
+        logger.error(f"Ошибка при обработке документа: {str(e)}", exc_info=True)
+        raise
 
 @router.get("/", response_model=List[DocumentResponse])
 async def get_documents(
@@ -206,76 +261,79 @@ async def delete_document(
         logger.error(f"Ошибка при удалении документа: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/", response_model=List[DocumentResponse])
+@router.post("/")
 async def create_document_with_file(
-    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_async_session)
-    # Temporarily disabled authentication
-    # current_user: User = Depends(security.get_current_active_admin)
 ):
+    """Создание нового документа с файлом."""
     try:
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided")
+            
         documents = []
         for file in files:
-            # Генерируем уникальное имя файла
-            file_extension = os.path.splitext(file.filename)[1]
-            system_filename = f"{uuid.uuid4()}{file_extension}"
-            file_path = os.path.join(UPLOAD_DIR, system_filename)
+            try:
+                # Генерируем уникальное имя файла
+                file_extension = os.path.splitext(file.filename)[1]
+                system_filename = f"{uuid.uuid4()}{file_extension}"
+                file_path = os.path.join(UPLOAD_DIR, system_filename)
+                
+                # Сохраняем файл
+                async with aiofiles.open(file_path, 'wb') as out_file:
+                    content = await file.read()
+                    await out_file.write(content)
+                    
+                # Вычисляем хеш файла
+                file_hash = calculate_file_hash(content)
+                
+                # Определяем MIME тип
+                mime_type, _ = mimetypes.guess_type(file.filename)
+                if mime_type is None:
+                    mime_type = 'application/octet-stream'
+                    
+                # Создаем запись в базе данных
+                db_document = Document(
+                    original_filename=file.filename,
+                    system_filename=system_filename,
+                    file_type=mime_type,
+                    file_size=len(content),
+                    content_text=None  # Будет заполнено позже
+                )
+                db.add(db_document)
+                await db.commit()
+                await db.refresh(db_document)
+                
+                # Пытаемся извлечь текст
+                try:
+                    cleaned_text, _ = await process_document(file_path, file_hash)
+                    db_document.content_text = cleaned_text
+                    await db.commit()
+                    await db.refresh(db_document)
+                except Exception as e:
+                    logger.error(f"Ошибка при обработке документа {file.filename}: {str(e)}")
+                    # Продолжаем работу, даже если не удалось извлечь текст
+                
+                documents.append(db_document)
+                
+            except Exception as e:
+                logger.error(f"Ошибка при обработке файла {file.filename}: {str(e)}")
+                # Продолжаем обработку остальных файлов
+                continue
+                
+        if not documents:
+            raise HTTPException(status_code=500, detail="Не удалось загрузить ни один документ")
             
-            # Сохраняем файл
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            
-            # Определяем MIME-тип файла
-            file_type, _ = mimetypes.guess_type(file.filename)
-            if not file_type:
-                file_type = "application/octet-stream"
-            
-            # Создаем запись в базе данных
-            document = Document(
-                original_filename=file.filename,
-                system_filename=system_filename,
-                file_type=file_type,
-                file_size=os.path.getsize(file_path),
-                created_at=datetime.utcnow()
-            )
-            
-            db.add(document)
-            await db.commit()
-            await db.refresh(document)
-            
-            # Добавляем задачу на извлечение текста
-            background_tasks.add_task(process_document, document.id, db)
-            
-            # Индексируем документ в OpenSearch
-            await search_client.index_document(
-                doc_id=document.id,
-                title=document.original_filename,
-                content="",  # Содержимое будет обновлено после извлечения текста
-                tags=[],
-                file_type=document.file_type
-            )
-            
-            # Преобразуем документ в словарь
-            document_dict = {
-                "id": document.id,
-                "original_filename": document.original_filename,
-                "system_filename": document.system_filename,
-                "file_type": document.file_type,
-                "file_size": document.file_size,
-                "content_text": document.content_text,
-                "created_at": document.created_at.isoformat() if document.created_at else None,
-                "updated_at": document.updated_at.isoformat() if document.updated_at else None
-            }
-            documents.append(document_dict)
-        
-        # Возвращаем успешный ответ
         return JSONResponse(
             status_code=200,
-            content={"message": "Документы успешно загружены", "documents": documents}
+            content={
+                "message": f"Успешно загружено {len(documents)} документов",
+                "documents": [doc.id for doc in documents]
+            }
         )
+        
     except Exception as e:
-        logger.error(f"Ошибка при создании документов: {str(e)}")
+        logger.error(f"Ошибка при загрузке документов: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{doc_id}", response_model=DocumentResponse)
