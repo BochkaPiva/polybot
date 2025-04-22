@@ -1,8 +1,17 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, JSON, Table
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
 
-from db.base import Base
+Base = declarative_base()
+
+# Связь многие-ко-многим для документов и тегов
+document_tags = Table(
+    'document_tags',
+    Base.metadata,
+    Column('document_id', Integer, ForeignKey('documents.id'), primary_key=True),
+    Column('tag_id', Integer, ForeignKey('tags.id'), primary_key=True)
+)
 
 class User(Base):
     __tablename__ = "users"
@@ -57,3 +66,24 @@ class Document(Base):
     indexed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    tags = relationship('Tag', secondary=document_tags, back_populates='documents')
+
+class Tag(Base):
+    __tablename__ = 'tags'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), unique=True, nullable=False)
+    
+    documents = relationship('Document', secondary=document_tags, back_populates='tags')
+
+class Employee(Base):
+    __tablename__ = 'employees'
+
+    id = Column(Integer, primary_key=True)
+    full_name = Column(String(255), nullable=False)
+    department = Column(String(100))
+    position = Column(String(100))
+    telegram_id = Column(Integer, unique=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

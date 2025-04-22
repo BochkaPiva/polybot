@@ -1,47 +1,58 @@
 {% extends "base.html" %}
 
-{% block title %}Documents Management - {{ super() }}{% endblock %}
+{% block title %}Документы - {{ super() }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Documents Management</h2>
-        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDocumentModal">
-            <i class="bi bi-plus-circle"></i> Add Document
-        </button>
+<div class="container-fluid px-4">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Документы</h1>
+        <div>
+            <button id="deleteSelectedBtn" type="button" class="btn btn-danger me-2" style="display: none;">
+                <i class="fas fa-trash me-1"></i> Удалить выбранные
+            </button>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDocumentModal">
+                <i class="fas fa-plus me-1"></i> Добавить документ
+            </button>
+        </div>
     </div>
 
-    <div class="card">
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="fas fa-file-alt me-1"></i>
+            Список документов
+        </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-striped">
+                <table class="table table-bordered table-hover" id="documentsTable" width="100%" cellspacing="0">
                     <thead>
                         <tr>
+                            <th width="40px">
+                                <input type="checkbox" class="form-check-input" id="selectAll">
+                            </th>
                             <th>ID</th>
-                            <th>Title</th>
-                            <th>File Path</th>
-                            <th>File Type</th>
-                            <th>Created At</th>
-                            <th>Updated At</th>
-                            <th>Actions</th>
+                            <th>Название</th>
+                            <th>Дата создания</th>
+                            <th>Действия</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for document in documents %}
+                        {% for doc in documents %}
                         <tr>
-                            <td>{{ document.id }}</td>
-                            <td>{{ document.title }}</td>
-                            <td>{{ document.file_path }}</td>
-                            <td>{{ document.file_type }}</td>
-                            <td>{{ document.created_at }}</td>
-                            <td>{{ document.updated_at }}</td>
                             <td>
-                                <button type="button" class="btn btn-sm btn-primary" onclick="editDocument({{ document.id }})">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                <button type="button" class="btn btn-sm btn-danger" onclick="deleteDocument({{ document.id }})">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <input type="checkbox" class="form-check-input doc-select" data-doc-id="{{ doc.id }}">
+                            </td>
+                            <td>{{ doc.id }}</td>
+                            <td>{{ doc.title }}</td>
+                            <td>{{ doc.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+                            <td>
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-info" onclick="viewDocument({{ doc.id }})">
+                                        <i class="fas fa-eye me-1"></i> Просмотр
+                                    </button>
+                                    <button type="button" class="btn btn-danger" onclick="deleteDocument({{ doc.id }})">
+                                        <i class="fas fa-trash me-1"></i> Удалить
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -53,126 +64,206 @@
 </div>
 
 <!-- Add Document Modal -->
-<div class="modal fade" id="addDocumentModal" tabindex="-1">
+<div class="modal fade" id="addDocumentModal" tabindex="-1" aria-labelledby="addDocumentModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Add New Document</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="addDocumentModalLabel">Добавить документ</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="addDocumentForm" method="POST" action="/admin/documents" enctype="multipart/form-data">
-                <div class="modal-body">
+            <div class="modal-body">
+                <form id="addDocumentForm">
                     <div class="mb-3">
-                        <label for="title" class="form-label">Title</label>
-                        <input type="text" class="form-control" id="title" name="title" required>
+                        <label for="addTitle" class="form-label">Название</label>
+                        <input type="text" class="form-control" id="addTitle" required>
                     </div>
                     <div class="mb-3">
-                        <label for="file" class="form-label">File</label>
-                        <input type="file" class="form-control" id="file" name="file" required>
+                        <label for="addContent" class="form-label">Содержание</label>
+                        <textarea class="form-control" id="addContent" rows="5"></textarea>
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="submit" class="btn btn-primary">Add Document</button>
-                </div>
-            </form>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="submitAddDocument()">Добавить</button>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Edit Document Modal -->
-<div class="modal fade" id="editDocumentModal" tabindex="-1">
-    <div class="modal-dialog">
+<!-- View Document Modal -->
+<div class="modal fade" id="viewDocumentModal" tabindex="-1" aria-labelledby="viewDocumentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Edit Document</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="viewDocumentModalLabel">Просмотр документа</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="editDocumentForm" method="POST" enctype="multipart/form-data">
-                <div class="modal-body">
-                    <input type="hidden" id="edit_document_id" name="document_id">
-                    <div class="mb-3">
-                        <label for="edit_title" class="form-label">Title</label>
-                        <input type="text" class="form-control" id="edit_title" name="title" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="edit_file" class="form-label">File (leave empty to keep current)</label>
-                        <input type="file" class="form-control" id="edit_file" name="file">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                </div>
-            </form>
+            <div class="modal-body">
+                <h4 id="viewTitle"></h4>
+                <div class="mt-3" id="viewContent"></div>
+            </div>
         </div>
     </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script>
-function editDocument(documentId) {
-    // Fetch document data and populate the edit form
-    fetch(`/admin/documents/${documentId}`)
-        .then(response => response.json())
-        .then(document => {
-            document.getElementById('edit_document_id').value = document.id;
-            document.getElementById('edit_title').value = document.title;
-            
-            // Show the modal
-            new bootstrap.Modal(document.getElementById('editDocumentModal')).show();
-        });
-}
-
-function deleteDocument(documentId) {
-    if (confirm('Are you sure you want to delete this document?')) {
-        fetch(`/admin/documents/${documentId}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => {
-            if (response.ok) {
-                location.reload();
-            } else {
-                alert('Error deleting document');
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.getElementById('documentsTable');
+    if (table) {
+        new simpleDatatables.DataTable(table, {
+            searchable: true,
+            sortable: true,
+            perPage: 10,
+            labels: {
+                placeholder: "Поиск...",
+                perPage: "{select} записей на странице",
+                noRows: "Записи не найдены",
+                info: "Показано с {start} по {end} из {rows} записей",
+                noResults: "Нет результатов по вашему запросу"
             }
         });
     }
+
+    // Обработка выбора всех чекбоксов
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const docCheckboxes = document.getElementsByClassName('doc-select');
+    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+
+    selectAllCheckbox.addEventListener('change', function() {
+        Array.from(docCheckboxes).forEach(checkbox => {
+            checkbox.checked = selectAllCheckbox.checked;
+        });
+        updateDeleteButtonVisibility();
+    });
+
+    // Обработка выбора отдельных чекбоксов
+    Array.from(docCheckboxes).forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            updateDeleteButtonVisibility();
+            // Обновляем состояние главного чекбокса
+            selectAllCheckbox.checked = Array.from(docCheckboxes).every(cb => cb.checked);
+        });
+    });
+
+    // Обработчик кнопки удаления выбранных
+    deleteSelectedBtn.addEventListener('click', function() {
+        const selectedIds = Array.from(docCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.dataset.docId);
+
+        if (selectedIds.length === 0) return;
+
+        if (confirm(`Вы уверены, что хотите удалить ${selectedIds.length} документов?`)) {
+            deleteSelectedDocuments(selectedIds);
+        }
+    });
+});
+
+function updateDeleteButtonVisibility() {
+    const selectedCount = Array.from(document.getElementsByClassName('doc-select'))
+        .filter(cb => cb.checked).length;
+    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+    deleteSelectedBtn.style.display = selectedCount > 0 ? 'inline-block' : 'none';
 }
 
-// Handle form submissions
-document.getElementById('addDocumentForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const formData = new FormData(this);
-    fetch('/admin/documents', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        if (response.ok) {
+function deleteSelectedDocuments(docIds) {
+    Promise.all(docIds.map(id => 
+        fetch(`/api/documents/${id}`, { method: 'DELETE' })
+    ))
+    .then(responses => {
+        const allSuccessful = responses.every(response => response.ok);
+        if (allSuccessful) {
             location.reload();
         } else {
-            alert('Error adding document');
+            throw new Error('Не удалось удалить некоторые документы');
         }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(error.message);
     });
-});
+}
 
-document.getElementById('editDocumentForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const formData = new FormData(this);
-    const documentId = document.getElementById('edit_document_id').value;
-    fetch(`/admin/documents/${documentId}`, {
-        method: 'PUT',
-        body: formData
+function submitAddDocument() {
+    const title = document.getElementById('addTitle').value;
+    const content = document.getElementById('addContent').value;
+
+    if (!title) {
+        alert('Пожалуйста, введите название документа');
+        return;
+    }
+
+    fetch('/api/documents/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            title: title,
+            content: content || null
+        })
     })
     .then(response => {
-        if (response.ok) {
-            location.reload();
-        } else {
-            alert('Error updating document');
+        if (!response.ok) {
+            return response.json().then(err => {
+                throw new Error(err.detail || 'Ошибка при добавлении документа');
+            });
         }
+        return response.json();
+    })
+    .then(data => {
+        document.getElementById('addTitle').value = '';
+        document.getElementById('addContent').value = '';
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addDocumentModal'));
+        modal.hide();
+        location.reload();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(error.message);
     });
-});
+}
+
+function viewDocument(docId) {
+    fetch(`/api/documents/${docId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Ошибка при загрузке документа');
+            }
+            return response.json();
+        })
+        .then(doc => {
+            document.getElementById('viewTitle').textContent = doc.title;
+            document.getElementById('viewContent').textContent = doc.content || 'Содержание отсутствует';
+            const modal = new bootstrap.Modal(document.getElementById('viewDocumentModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert(error.message);
+        });
+}
+
+function deleteDocument(docId) {
+    if (confirm('Вы уверены, что хотите удалить этот документ?')) {
+        fetch(`/api/documents/${docId}`, {
+            method: 'DELETE'
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Ошибка при удалении документа');
+            }
+            location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert(error.message);
+        });
+    }
+}
 </script>
 {% endblock %} 

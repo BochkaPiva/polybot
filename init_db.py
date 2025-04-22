@@ -1,10 +1,12 @@
 import asyncio
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from config import BOT_TOKEN
-from db.base import init_db, async_session
-from db.models import User, MenuItem
+from db.base import init_db, async_session, get_session
+from db.models import User, MenuItem, Employee
+from search.client import search_client
 
 # Configure logging
 logging.basicConfig(
@@ -128,21 +130,55 @@ async def create_initial_menu():
             
             logger.info("Initial menu created")
 
+async def create_test_employee():
+    """Создание тестового сотрудника"""
+    async with get_session() as session:
+        # Проверяем, существует ли уже тестовый сотрудник
+        query = select(Employee).where(Employee.full_name == "Иванов Иван Иванович")
+        result = await session.execute(query)
+        employee = result.scalar_one_or_none()
+
+        if not employee:
+            # Создаем тестового сотрудника
+            employee = Employee(
+                full_name="Иванов Иван Иванович",
+                department="Технический отдел",
+                position="Инженер",
+                is_active=True
+            )
+            session.add(employee)
+            await session.commit()
+            logger.info("Test employee created")
+
 async def main():
     """Initialize database and create initial data"""
-    logger.info("Initializing database...")
-    await init_db()
-    
-    logger.info("Creating initial users...")
-    await create_initial_users()
-    
-    logger.info("Creating initial menu...")
-    await create_initial_menu()
-    
-    logger.info("Database initialization completed")
+    try:
+        # Инициализация базы данных
+        logger.info("Initializing database...")
+        await init_db()
+        logger.info("Database initialized successfully")
+
+        # Создание тестового сотрудника
+        logger.info("Creating test employee...")
+        await create_test_employee()
+        logger.info("Test employee created successfully")
+
+        # Инициализация поискового индекса
+        logger.info("Initializing search index...")
+        await search_client.init_index()
+        logger.info("Search index initialized successfully")
+
+        logger.info("Creating initial users...")
+        await create_initial_users()
+        
+        logger.info("Creating initial menu...")
+        await create_initial_menu()
+        
+        logger.info("Database initialization completed")
+
+    except Exception as e:
+        logger.error(f"Error during initialization: {e}")
+        raise
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        logger.error(f"Error during database initialization: {e}")
+    asyncio.run(main())

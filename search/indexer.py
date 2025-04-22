@@ -6,7 +6,7 @@ import docx
 import textract
 
 from db.models import Document
-from search.client import OpenSearchClient
+from search.client import SearchClient, search_client
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +16,14 @@ class DocumentIndexer:
     def __init__(self, upload_dir="uploads"):
         """Initialize document indexer"""
         self.upload_dir = upload_dir
-        self.client = OpenSearchClient()
+        self.client = search_client
         
         # Create upload directory if it doesn't exist
         os.makedirs(self.upload_dir, exist_ok=True)
     
     async def initialize(self):
         """Initialize OpenSearch index"""
-        await self.client.create_index()
+        await self.client.init_index()
     
     async def index_document(self, document: Document):
         """Index a document"""
@@ -40,22 +40,20 @@ class DocumentIndexer:
             
             document.content_text = content
         
-        # Create document for indexing
-        doc = {
-            "id": document.id,
-            "title": document.title,
-            "content": document.content_text,
-            "file_type": document.file_type,
-            "created_at": document.created_at.isoformat(),
-            "updated_at": document.updated_at.isoformat()
-        }
-        
         # Index document
-        success = await self.client.index_document(document.id, doc)
-        if success:
+        try:
+            await self.client.index_document(
+                doc_id=document.id,
+                title=document.title,
+                content=document.content_text,
+                tags=[tag.name for tag in document.tags],
+                file_type=document.file_type
+            )
             document.indexed = True
-        
-        return success
+            return True
+        except Exception as e:
+            logger.error(f"Error indexing document {document.id}: {e}")
+            return False
     
     async def extract_text(self, file_path):
         """Extract text from document"""
@@ -104,31 +102,11 @@ class DocumentIndexer:
         """Extract text using textract"""
         return textract.process(file_path).decode('utf-8')
     
-    async def update_document(self, document: Document):
-        """Update indexed document"""
-        # Extract text if content changed
-        content = await self.extract_text(document.file_path)
-        if not content:
-            logger.error(f"Failed to extract text from {document.file_path}")
-            return False
-        
-        document.content_text = content
-        
-        # Create document for indexing
-        doc = {
-            "title": document.title,
-            "content": document.content_text,
-            "file_type": document.file_type,
-            "updated_at": document.updated_at.isoformat()
-        }
-        
-        # Update document
-        return await self.client.update_document(document.id, doc)
-    
     async def delete_document(self, document_id):
         """Delete indexed document"""
-        return await self.client.delete_document(document_id)
-    
-    async def close(self):
-        """Close client connection"""
-        await self.client.close()
+        try:
+            await self.client.delete_document(document_id)
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting document {document_id}: {e}")
+            return False

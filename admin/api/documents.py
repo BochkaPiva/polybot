@@ -25,14 +25,14 @@ async def get_documents(
     documents = result.scalars().all()
     return documents
 
-@router.get("/{document_id}", response_model=DocumentResponse)
+@router.get("/{doc_id}", response_model=DocumentResponse)
 async def get_document(
-    document_id: int,
+    doc_id: int,
     db: AsyncSession = Depends(get_async_session)
     # Temporarily disabled authentication
     # current_user: User = Depends(security.get_current_active_admin)
 ):
-    query = select(Document).where(Document.id == document_id)
+    query = select(Document).where(Document.id == doc_id)
     result = await db.execute(query)
     document = result.scalar_one_or_none()
     if document is None:
@@ -41,76 +41,54 @@ async def get_document(
 
 @router.post("/", response_model=DocumentResponse)
 async def create_document(
-    title: str,
-    file: UploadFile = File(...),
+    doc_create: DocumentCreate,
     db: AsyncSession = Depends(get_async_session)
     # Temporarily disabled authentication
     # current_user: User = Depends(security.get_current_active_admin)
 ):
-    # Check file type
-    file_type = file.filename.split(".")[-1].lower()
-    if file_type not in settings.ALLOWED_FILE_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File type not allowed. Allowed types: {', '.join(settings.ALLOWED_FILE_TYPES)}"
-        )
-    
-    # Save file
-    file_path = os.path.join(settings.UPLOAD_DIR, file.filename)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    # Create document record
     document = Document(
-        title=title,
-        file_path=file_path,
-        file_type=file_type
-        # Temporarily disabled owner_id
-        # owner_id=current_user.id
+        title=doc_create.title,
+        content=doc_create.content
     )
     db.add(document)
     await db.commit()
     await db.refresh(document)
     return document
 
-@router.put("/{document_id}", response_model=DocumentResponse)
+@router.put("/{doc_id}", response_model=DocumentResponse)
 async def update_document(
-    document_id: int,
-    document_update: DocumentUpdate,
+    doc_id: int,
+    doc_update: DocumentUpdate,
     db: AsyncSession = Depends(get_async_session)
     # Temporarily disabled authentication
     # current_user: User = Depends(security.get_current_active_admin)
 ):
-    query = select(Document).where(Document.id == document_id)
+    query = select(Document).where(Document.id == doc_id)
     result = await db.execute(query)
     document = result.scalar_one_or_none()
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    # Update document fields
-    for field, value in document_update.dict(exclude_unset=True).items():
+    update_data = doc_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
         setattr(document, field, value)
     
     await db.commit()
     await db.refresh(document)
     return document
 
-@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
-    document_id: int,
+    doc_id: int,
     db: AsyncSession = Depends(get_async_session)
     # Temporarily disabled authentication
     # current_user: User = Depends(security.get_current_active_admin)
 ):
-    query = select(Document).where(Document.id == document_id)
+    query = select(Document).where(Document.id == doc_id)
     result = await db.execute(query)
     document = result.scalar_one_or_none()
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    
-    # Delete file if exists
-    if document.file_path and os.path.exists(document.file_path):
-        os.remove(document.file_path)
     
     await db.delete(document)
     await db.commit()

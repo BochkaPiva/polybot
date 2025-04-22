@@ -5,32 +5,83 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from db.repositories.users import UserRepository
-from db.models import User
+from db.models import User, Employee
 from bot.keyboards.common import get_auth_keyboard, get_main_keyboard
+from db.base import get_session
+from sqlalchemy import select
 
 # Define authentication states
 class AuthStates(StatesGroup):
-    waiting_for_full_name = State()
-    waiting_for_auth_code = State()
+    waiting_for_name = State()
+    confirming_identity = State()
 
 # Create router
 router = Router()
 
-@router.message(Command("start"), StateFilter(None))
-async def cmd_start(message: Message, session, is_authenticated: bool, user=None):
-    """Handle /start command"""
-    if is_authenticated:
-        await message.answer(
-            f"Добро пожаловать, {user.full_name}! Вы уже авторизованы.",
-            reply_markup=get_main_keyboard()
-        )
-        return
-    
+@router.message(F.text == "/start")
+async def cmd_start(message: Message, state: FSMContext):
+    """Обработчик команды /start"""
     await message.answer(
-        "Добро пожаловать в бот-справочник предприятия 'Полиом'!\n"
-        "Для начала работы, пожалуйста, авторизуйтесь.",
-        reply_markup=get_auth_keyboard()
+        "Добро пожаловать! Для начала работы введите ваше ФИО."
     )
+    await state.set_state(AuthStates.waiting_for_name)
+
+@router.message(AuthStates.waiting_for_name)
+async def process_name(message: Message, state: FSMContext):
+    """Обработка введенного ФИО"""
+    async with get_session() as session:
+        # Ищем сотрудника по ФИО
+        query = select(Employee).where(
+            Employee.full_name.ilike(f"%{message.text}%"),
+            Employee.is_active == True
+        )
+        result = await session.execute(query)
+        employee = result.scalar_one_or_none()
+
+        if not employee:
+            await message.answer(
+                "Сотрудник с таким ФИО не найден. Пожалуйста, проверьте правильность ввода и попробуйте снова."
+            )
+            return
+
+        # Сохраняем найденного сотрудника в состоянии
+        await state.update_data(employee_id=employee.id)
+        
+        # Запрашиваем подтверждение
+        await message.answer(
+            f"Вы {employee.full_name} из отдела {employee.department or 'не указан'}?\n"
+            "Пожалуйста, подтвердите, что это вы."
+        )
+        await state.set_state(AuthStates.confirming_identity)
+
+@router.message(AuthStates.confirming_identity)
+async def process_confirmation(message: Message, state: FSMContext):
+    """Обработка подтверждения личности"""
+    if message.text.lower() not in ["да", "yes", "верно", "правильно"]:
+        await message.answer(
+            "Пожалуйста, введите ваше ФИО снова."
+        )
+        await state.set_state(AuthStates.waiting_for_name)
+        return
+
+    # Получаем данные из состояния
+    data = await state.get_data()
+    employee_id = data.get("employee_id")
+
+    async with get_session() as session:
+        # Обновляем telegram_id сотрудника
+        query = select(Employee).where(Employee.id == employee_id)
+        result = await session.execute(query)
+        employee = result.scalar_one()
+
+        employee.telegram_id = message.from_user.id
+        await session.commit()
+
+        await message.answer(
+            "Отлично! Вы успешно авторизованы.\n"
+            "Используйте /menu для доступа к основному меню."
+        )
+        await state.clear()
 
 @router.callback_query(F.data == "auth")
 async def auth_callback(callback: CallbackQuery, state: FSMContext):
@@ -43,9 +94,9 @@ async def auth_callback(callback: CallbackQuery, state: FSMContext):
     )
     
     # Set state to waiting for full name
-    await state.set_state(AuthStates.waiting_for_full_name)
+    await state.set_state(AuthStates.waiting_for_name)
 
-@router.message(AuthStates.waiting_for_full_name)
+@router.message(AuthStates.waiting_for_name)
 async def process_full_name(message: Message, state: FSMContext, session):
     """Process full name input"""
     full_name = message.text.strip()
@@ -78,9 +129,9 @@ async def process_full_name(message: Message, state: FSMContext, session):
     )
     
     # Set state to waiting for auth code
-    await state.set_state(AuthStates.waiting_for_auth_code)
+    await state.set_state(AuthStates.confirming_identity)
 
-@router.message(AuthStates.waiting_for_auth_code)
+@router.message(AuthStates.confirming_identity)
 async def process_auth_code(message: Message, state: FSMContext, session):
     """Process authentication code input"""
     auth_code = message.text.strip()

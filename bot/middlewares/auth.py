@@ -2,8 +2,11 @@ from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from db.repositories.users import UserRepository
+from db.base import get_session
+from db.models import Employee
 
 class AuthMiddleware(BaseMiddleware):
     """Middleware to check if user is authenticated"""
@@ -14,32 +17,26 @@ class AuthMiddleware(BaseMiddleware):
         event: Message | CallbackQuery,
         data: Dict[str, Any]
     ) -> Any:
-        # Get session from data (will be injected by another middleware)
-        session: AsyncSession = data.get("session")
-        
-        # Skip middleware if no session available
-        if not session:
+        # Пропускаем команду /start без проверки
+        if isinstance(event, Message) and event.text == "/start":
             return await handler(event, data)
-        
-        # Get user from database
-        user_repo = UserRepository(session)
-        
-        # Extract user ID based on event type
-        if isinstance(event, Message):
-            user = await user_repo.get_user_by_telegram_id(event.from_user.id)
-        elif isinstance(event, CallbackQuery):
-            user = await user_repo.get_user_by_telegram_id(event.from_user.id)
-        else:
-            # Skip for other event types
+
+        async with get_session() as session:
+            # Проверяем, есть ли у пользователя telegram_id в базе
+            query = select(Employee).where(
+                Employee.telegram_id == event.from_user.id,
+                Employee.is_active == True
+            )
+            result = await session.execute(query)
+            employee = result.scalar_one_or_none()
+
+            if not employee:
+                if isinstance(event, Message):
+                    await event.answer(
+                        "Вы не авторизованы. Пожалуйста, используйте команду /start для авторизации."
+                    )
+                return
+
+            # Добавляем информацию о сотруднике в data
+            data["employee"] = employee
             return await handler(event, data)
-        
-        # Add user to data
-        data["user"] = user
-        
-        # Check if user exists and is authenticated
-        if user and user.is_authenticated:
-            data["is_authenticated"] = True
-        else:
-            data["is_authenticated"] = False
-        
-        return await handler(event, data)
